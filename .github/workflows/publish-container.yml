@@ -1,0 +1,74 @@
+name: Reusable - Publish Container
+
+on:
+  workflow_call:
+    inputs:
+      image-name:
+        type: string
+        required: true
+        description: Image name within the GitHub Container Registry
+
+    secrets:
+      build_secrets:
+        required: false
+
+    outputs:
+      images:
+        description: Full image URLs including tags
+        value: ${{ jobs.publish.outputs.images}}
+
+jobs:
+  publish:
+    name: build and publish container image
+    runs-on: ubuntu-24.04
+
+    outputs:
+      images: ${{ steps.meta.outputs.tags }}
+
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+
+      - name: docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ghcr.io/${{ github.repository }}/${{ inputs.image-name }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=sha,format=long
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: login to github container registry
+        uses: docker/login-action@v3
+        with:
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: ghcr.io
+
+      - name: set up qemu
+        uses: docker/setup-qemu-action@v3
+
+      - name: set up docker buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: build and push
+        uses: docker/build-push-action@v6
+        with:
+          push: true
+          platforms: linux/amd64
+          tags: ${{ steps.meta.outputs.tags }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}/${{ inputs.image-name }}:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository }}/${{ inputs.image-name }}:buildcache,mode=max
+          secrets: ${{ secrets.build_secrets }}
