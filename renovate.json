@@ -1,0 +1,42 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "timezone": "Europe/Prague",
+  "configMigration": true,
+  "extends": [
+    "config:recommended"
+  ],
+  "semanticCommits": "enabled",
+  "prCreation": "not-pending",
+  "labels": [
+    "dependencies"
+  ],
+  "recreateWhen": "always",
+  "argocd": {
+    "managerFilePatterns": [
+      "/^apps/.*\\.ya?ml$/"
+    ]
+  },
+  "helm-values": {
+    "managerFilePatterns": [
+      "/^apps/.*\\.ya?ml$/"
+    ]
+  },
+  "packageRules": [
+    {
+      "matchSourceUrls": [
+        "https://github.com/**"
+      ],
+      "prBodyDefinitions": {
+        "OpenSSF": "[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/{{sourceRepo}}/badge)](https://securityscorecards.dev/viewer/?uri=github.com/{{sourceRepo}})"
+      },
+      "prBodyColumns": [
+        "Package",
+        "Type",
+        "Update",
+        "Change",
+        "Pending",
+        "OpenSSF"
+      ]
+    }
+  ]
+}
