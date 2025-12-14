@@ -1,0 +1,171 @@
+name: Reusable - Helm deploy
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        required: false
+        description: GitHub environment name for deployment protection rules
+      environment-url:
+        type: string
+        required: false
+        description: URL to display in GitHub environment
+      kubeconfig-encoding:
+        type: string
+        required: false
+        default: base64
+        description: Encoding of kubeconfig secret (base64 or none)
+      helm-chart-path:
+        type: string
+        required: true
+        description: Path to Helm chart directory
+      release-name:
+        type: string
+        required: true
+        description: Helm release name
+      release-namespace:
+        type: string
+        required: true
+        description: Kubernetes namespace for deployment
+      values-file:
+        type: string
+        required: true
+        description: Path to Helm values file
+      image-tag:
+        type: string
+        required: false
+        default: ''
+        description: Image tag to deploy (defaults to sha-<commit>)
+      helm-timeout:
+        type: string
+        required: false
+        default: '5m0s'
+        description: Helm deployment timeout
+      helm-extra-args:
+        type: string
+        required: false
+        default: ''
+        description: Additional Helm arguments
+      app-label-selector:
+        type: string
+        required: false
+        default: ''
+        description: Kubernetes label selector for diagnostics (e.g., app.kubernetes.io/name=myapp)
+      automatic-rollback:
+        type: boolean
+        required: false
+        default: true
+        description: Automatically rollback on deployment failure
+      dry-run:
+        type: boolean
+        required: false
+        default: false
+        description: Preview changes without deploying
+
+    secrets:
+      kubeconfig:
+        required: true
+        description: Kubeconfig content for cluster access
+
+    outputs:
+      release-revision:
+        description: Helm release revision number
+        value: ${{ jobs.deploy.outputs.release-revision }}
+
+jobs:
+  deploy:
+    name: deploy
+    runs-on: ubuntu-24.04
+
+    outputs:
+      release-revision: ${{ steps.helm_deploy.outputs.revision }}
+
+    permissions:
+      contents: read
+
+    concurrency:
+      group: deploy-${{ inputs.environment }}
+      cancel-in-progress: false
+
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ inputs.environment-url}}
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+
+      - name: set up helm
+        uses: azure/setup-helm@v4
+
+      - name: set up kubectl context
+        uses: azure/k8s-set-context@v4
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.kubeconfig }}
+          kubeconfig-encoding: ${{ inputs.kubeconfig-encoding }}
+
+      - name: helm upgrade
+        id: helm_deploy
+        continue-on-error: true
+        shell: bash
+        env:
+          IMAGE_TAG: ${{ inputs.image-tag || format('sha-{0}', github.sha) }}
+        run: |
+          helm upgrade --install ${{ inputs.release-name }} ${{ inputs.helm-chart-path }} \
+            --namespace ${{ inputs.release-namespace }} \
+            --timeout ${{ inputs.helm-timeout }} \
+            --wait \
+            --wait-for-jobs \
+            ${{ inputs.automatic-rollback && '--atomic' || '' }} \
+            ${{ inputs.dry-run && '--dry-run' || '' }} \
+            --values ${{ inputs.values-file }} \
+            --set image.tag=${IMAGE_TAG} \
+            ${{ inputs.helm-extra-args }}
+
+          echo "revision=$(helm history ${{ inputs.release-name }} --namespace ${{ inputs.release-namespace }} --max 1 -o json | jq -r '.[0].revision')" >> "$GITHUB_OUTPUT"
+
+      - name: collect diagnostics on failure
+        if: steps.helm_deploy.outcome == 'failure'
+        env:
+          RELEASE_NAME: ${{ inputs.release-name }}
+          NAMESPACE: ${{ inputs.release-namespace }}
+          APP_LABEL: ${{ inputs.app-label-selector }}
+        run: |
+          echo "::group::Helm Release Status"
+          helm status "${RELEASE_NAME}" --namespace "${NAMESPACE}" --show-resources || true
+          echo "::endgroup::"
+
+          echo "::group::Helm Release History"
+          helm history "${RELEASE_NAME}" --namespace "${NAMESPACE}" || true
+          echo "::endgroup::"
+
+          echo "::group::Current Values"
+          helm get values "${RELEASE_NAME}" --namespace "${NAMESPACE}" || true
+          echo "::endgroup::"
+
+          echo "::group::Pod Events"
+          kubectl get events --field-selector involvedObject.kind=Pod --sort-by='.lastTimestamp' --namespace "${NAMESPACE}" | tail -30 || true
+          echo "::endgroup::"
+
+          if [[ -n "${APP_LABEL}" ]]; then
+            echo "::group::Pod Status"
+            kubectl get pods -l "${APP_LABEL}" --namespace "${NAMESPACE}" -o wide || true
+            echo "::endgroup::"
+
+            echo "::group::Pod Logs (last 50 lines)"
+            for pod in $(kubectl get pods -l "${APP_LABEL}" --namespace "${NAMESPACE}" -o name 2>/dev/null); do
+              echo "--- Logs for $pod ---"
+              kubectl logs "$pod" --tail=50 --all-containers=true --namespace "${NAMESPACE}" || true
+            done
+            echo "::endgroup::"
+
+            echo "::group::Deployment/Job Status"
+            kubectl describe deployment,job -l "${APP_LABEL}" --namespace "${NAMESPACE}" || true
+            echo "::endgroup::"
+          fi
+
+      - name: fail if helm deploy failed
+        if: steps.helm_deploy.outcome == 'failure'
+        run: exit 1
