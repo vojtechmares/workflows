@@ -62,6 +62,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: build and push
+        id: build
         uses: docker/build-push-action@v6
         with:
           push: true
@@ -72,3 +73,17 @@ jobs:
           cache-from: type=registry,ref=ghcr.io/${{ github.repository }}/${{ inputs.image-name }}:buildcache
           cache-to: type=registry,ref=ghcr.io/${{ github.repository }}/${{ inputs.image-name }}:buildcache,mode=max
           secrets: ${{ secrets.build_secrets }}
+
+      - name: install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: sign container image
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          images=""
+          for tag in ${TAGS}; do
+            images+="${tag}@${DIGEST} "
+          done
+          cosign sign --yes ${images}
