@@ -1,3 +1,4 @@
+# Documentation: https://github.com/vojtechmares/workflows/blob/main/docs/workflows/publish-container.md
 name: Reusable - Publish Container
 
 on:

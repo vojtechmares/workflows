@@ -1,3 +1,4 @@
+# Documentation: https://github.com/vojtechmares/workflows/blob/main/docs/workflows/helm-deploy.md
 name: Reusable - Helm deploy
 
 on:
