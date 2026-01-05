@@ -14,6 +14,7 @@ Build, publish, and sign container images to GitHub Container Registry (GHCR).
 | Input | Type | Required | Description |
 |-------|------|----------|-------------|
 | `image-name` | string | Yes | Image name within GHCR |
+| `build-args` | string | No | Build arguments to pass to docker build (newline-separated) |
 
 ## Secrets
 
@@ -42,6 +43,9 @@ jobs:
     uses: vojtechmares/workflows/.github/workflows/publish-container.yml@main
     with:
       image-name: my-app
+      build-args: |
+        VERSION=1.0.0
+        BUILD_DATE=2024-01-01
     secrets:
       build_secrets: |
         npm_token=${{ secrets.NPM_TOKEN }}

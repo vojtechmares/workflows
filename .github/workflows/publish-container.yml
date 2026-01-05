@@ -8,6 +8,10 @@ on:
         type: string
         required: true
         description: Image name within the GitHub Container Registry
+      build-args:
+        type: string
+        required: false
+        description: Build arguments to pass to docker build (newline-separated)
 
     secrets:
       build_secrets:
@@ -73,6 +77,7 @@ jobs:
           sbom: true
           cache-from: type=registry,ref=ghcr.io/${{ github.repository }}/${{ inputs.image-name }}:buildcache
           cache-to: type=registry,ref=ghcr.io/${{ github.repository }}/${{ inputs.image-name }}:buildcache,mode=max
+          build-args: ${{ inputs.build-args }}
           secrets: ${{ secrets.build_secrets }}
 
       - name: install cosign
