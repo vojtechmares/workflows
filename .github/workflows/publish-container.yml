@@ -25,7 +25,7 @@ on:
 jobs:
   publish:
     name: build and publish container image
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
 
     outputs:
       images: ${{ steps.meta.outputs.tags }}
